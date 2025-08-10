@@ -1,6 +1,9 @@
 import os
+from dotenv import load_dotenv
 
-# Configuration settings
+# Load environment variables
+load_dotenv()
+
 class Config:
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
     SUPPORTED_FORMATS = ['pdf', 'docx', 'txt']
@@ -18,18 +21,18 @@ class Config:
     ]
     
     # IBM Watson Natural Language Understanding
-    WATSON_NLU_API_KEY = "dZKePvQ2q6KRTR1vk-o-RH6KnDTxFotOhBDp4c461RWL"
-    WATSON_NLU_URL = "https://api.jp-tok.natural-language-understanding.watson.cloud.ibm.com/instances/c30bc15f-30ab-46d4-84db-0c74789e73b1"
+    WATSON_NLU_API_KEY = os.getenv('WATSON_NLU_API_KEY')
+    WATSON_NLU_URL = os.getenv('WATSON_NLU_URL')
     
     # IBM Watson Assistant
-    WATSON_ASSISTANT_API_KEY = "cQr6ZJKZE7yj05yJ_rKhVcpn0EdtFtU06-laRKE2mHXu"
-    WATSON_ASSISTANT_URL = "https://api.jp-tok.assistant.watson.cloud.ibm.com/instances/1b921179-9d40-407a-a604-0e8681b0176f"
+    WATSON_ASSISTANT_API_KEY = os.getenv('WATSON_ASSISTANT_API_KEY')
+    WATSON_ASSISTANT_URL = os.getenv('WATSON_ASSISTANT_URL')
     
     # IBM Granite Model (watsonx.ai)
-    WATSONX_API_KEY = "0mKdImTNgmk9fWYsbWl6DbAZPoBrQ5cwDk-Rlcyg14a7"
-    WATSONX_PROJECT_ID = "44c1fe48-953f-45e1-a043-806310d7365a"
-    WATSONX_URL = "https://eu-de.ml.cloud.ibm.com"
-    GRANITE_MODEL_ID = "ibm/granite-13b-instruct-v2"
+    WATSONX_API_KEY = os.getenv('WATSONX_API_KEY')
+    WATSONX_PROJECT_ID = os.getenv('WATSONX_PROJECT_ID')
+    WATSONX_URL = os.getenv('WATSONX_URL')
+    GRANITE_MODEL_ID = os.getenv('GRANITE_MODEL_ID', 'ibm/granite-13b-instruct-v2')
     
     # Terms and Conditions
     TERMS_CONDITIONS = '''

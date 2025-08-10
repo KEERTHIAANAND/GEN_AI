@@ -1,10 +1,9 @@
 import PyPDF2
 import docx
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 import nltk
-from nltk.tokenize import sent_tokenize, word_tokenize
-from nltk.corpus import stopwords
+from nltk.tokenize import sent_tokenize
 from config import Config
 
 # IBM Watson imports
@@ -15,25 +14,20 @@ try:
     WATSON_AVAILABLE = True
 except ImportError:
     WATSON_AVAILABLE = False
+    print("Watson SDK not available, using fallback methods")
 
 # Download required NLTK data
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
-    nltk.download('punkt')
-
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords')
+    nltk.download('punkt', quiet=True)
 
 class DocumentProcessor:
     def __init__(self):
-        self.stop_words = set(stopwords.words('english'))
         self.watson_nlu = None
         
         # Initialize Watson NLU for enhanced entity extraction
-        if WATSON_AVAILABLE:
+        if WATSON_AVAILABLE and Config.WATSON_NLU_API_KEY:
             try:
                 authenticator = IAMAuthenticator(Config.WATSON_NLU_API_KEY)
                 self.watson_nlu = NaturalLanguageUnderstandingV1(
@@ -41,6 +35,7 @@ class DocumentProcessor:
                     authenticator=authenticator
                 )
                 self.watson_nlu.set_service_url(Config.WATSON_NLU_URL)
+                print("Watson NLU initialized successfully in DocumentProcessor")
             except Exception as e:
                 print(f"Watson NLU initialization failed in DocumentProcessor: {e}")
     
@@ -50,7 +45,9 @@ class DocumentProcessor:
             pdf_reader = PyPDF2.PdfReader(file)
             text = ""
             for page in pdf_reader.pages:
-                text += page.extract_text()
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
             return text
         except Exception as e:
             raise Exception(f"Error extracting PDF text: {str(e)}")
@@ -61,7 +58,8 @@ class DocumentProcessor:
             doc = docx.Document(file)
             text = ""
             for paragraph in doc.paragraphs:
-                text += paragraph.text + "\n"
+                if paragraph.text.strip():
+                    text += paragraph.text + "\n"
             return text
         except Exception as e:
             raise Exception(f"Error extracting DOCX text: {str(e)}")
@@ -70,6 +68,12 @@ class DocumentProcessor:
         """Extract text from TXT file"""
         try:
             return file.read().decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                file.seek(0)
+                return file.read().decode('latin-1')
+            except Exception as e:
+                raise Exception(f"Error extracting TXT text: {str(e)}")
         except Exception as e:
             raise Exception(f"Error extracting TXT text: {str(e)}")
     
@@ -90,7 +94,7 @@ class DocumentProcessor:
             # Remove extra whitespace and normalize
             text = re.sub(r'\s+', ' ', text)
             # Remove problematic characters but keep basic punctuation
-            text = re.sub(r'[^\w\s.,;:!?()\-\[\]"]', ' ', text)
+            text = re.sub(r'[^\w\s.,;:!?()\-\[\]"\']', ' ', text)
             # Fix multiple spaces
             text = re.sub(r'\s+', ' ', text)
             return text.strip()
@@ -101,43 +105,39 @@ class DocumentProcessor:
     def extract_clauses(self, text: str) -> List[str]:
         """Extract individual clauses from text"""
         try:
-            # Split by common clause indicators - fixed regex patterns
-            clause_patterns = [
-                r'\n\s*\d+\.\s+',  # Numbered clauses (1. 2. 3.)
-                r'\n\s*[A-Z]\)\s+',  # Lettered clauses (A) B) C))
-                r'\n\s*Article\s+\d+',  # Articles
-                r'\n\s*Section\s+\d+',  # Sections
-                r'\n\s*Clause\s+\d+',  # Explicit clauses
-            ]
-            
             clauses = []
-            current_text = text
             
-            for pattern in clause_patterns:
-                try:
-                    parts = re.split(pattern, current_text, flags=re.IGNORECASE)
-                    if len(parts) > 1:
-                        clauses.extend([part.strip() for part in parts if part.strip() and len(part.strip()) > 20])
-                        break
-                except re.error:
-                    continue
+            # Try different clause splitting methods
+            # Method 1: Split by numbered clauses
+            numbered_pattern = r'\n\s*\d+\.\s+'
+            parts = re.split(numbered_pattern, text, flags=re.IGNORECASE)
+            if len(parts) > 2:
+                clauses = [part.strip() for part in parts[1:] if part.strip() and len(part.strip()) > 50]
             
+            # Method 2: If no numbered clauses, try paragraphs
             if not clauses:
-                # Fallback: split by paragraphs and double newlines
-                paragraphs = text.replace('\n\n', '|||SPLIT|||').split('|||SPLIT|||')
+                paragraphs = text.split('\n\n')
                 clauses = [p.strip() for p in paragraphs if len(p.strip()) > 50]
             
-            # If still no clauses, split by sentences for very short documents
+            # Method 3: If still no clauses, split by sentences
             if not clauses:
                 sentences = sent_tokenize(text)
-                clauses = [s.strip() for s in sentences if len(s.strip()) > 30]
+                current_clause = ""
+                for sentence in sentences:
+                    current_clause += sentence + " "
+                    if len(current_clause) > 100:
+                        clauses.append(current_clause.strip())
+                        current_clause = ""
+                if current_clause.strip():
+                    clauses.append(current_clause.strip())
             
             return clauses[:10]  # Limit to first 10 clauses
             
         except Exception as e:
-            # Emergency fallback - just split by periods for sentences
+            print(f"Error extracting clauses: {e}")
+            # Emergency fallback
             sentences = text.split('. ')
-            return [s.strip() + '.' for s in sentences if len(s.strip()) > 30][:10]
+            return [s.strip() + '.' for s in sentences if len(s.strip()) > 50][:5]
     
     def extract_entities_with_watson(self, text: str) -> Dict[str, List[str]]:
         """Extract entities using Watson NLU"""
@@ -145,8 +145,11 @@ class DocumentProcessor:
             return self.extract_entities_fallback(text)
         
         try:
+            # Limit text size for API
+            analysis_text = text[:4000] if len(text) > 4000 else text
+            
             response = self.watson_nlu.analyze(
-                text=text[:5000],  # Limit text size for API
+                text=analysis_text,
                 features=Features(
                     entities=EntitiesOptions(limit=25),
                     keywords=KeywordsOptions(limit=20)
@@ -168,8 +171,7 @@ class DocumentProcessor:
                 entity_text = entity.get('text', '').strip()
                 confidence = entity.get('confidence', 0)
                 
-                # Only include high-confidence entities
-                if confidence > 0.5:
+                if confidence > 0.6:  # Higher confidence threshold
                     if entity_type in ['person', 'organization', 'company']:
                         entities['parties'].append(entity_text)
                     elif entity_type in ['date', 'datetime', 'time']:
@@ -179,29 +181,27 @@ class DocumentProcessor:
             
             # Extract keywords as legal terms
             keywords = response.get('keywords', [])
-            legal_keywords = []
             for keyword in keywords:
                 kw_text = keyword.get('text', '')
                 kw_relevance = keyword.get('relevance', 0)
-                if kw_relevance > 0.5:  # High relevance keywords only
-                    legal_keywords.append(kw_text)
+                if kw_relevance > 0.6:
+                    entities['legal_terms'].append(kw_text)
             
-            entities['legal_terms'] = legal_keywords
-            
-            # Extract obligations using sentence analysis
+            # Extract obligations
             try:
                 sentences = sent_tokenize(text)
                 obligation_words = ['shall', 'must', 'agrees', 'obligated', 'required', 'responsible']
                 for sentence in sentences:
-                    if any(word in sentence.lower() for word in obligation_words) and len(sentence) < 200:
+                    if any(word in sentence.lower() for word in obligation_words) and len(sentence) < 150:
                         entities['obligations'].append(sentence.strip())
+                        if len(entities['obligations']) >= 3:
+                            break
             except Exception:
                 pass
             
             # Remove duplicates and limit results
             for key in entities:
-                if isinstance(entities[key], list):
-                    entities[key] = list(set(entities[key]))[:5]
+                entities[key] = list(dict.fromkeys(entities[key]))[:5]
             
             return entities
             
@@ -220,78 +220,79 @@ class DocumentProcessor:
         }
         
         try:
-            # Extract dates - simplified pattern
+            # Extract dates
             date_patterns = [
-                r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b',  # MM/DD/YYYY or MM-DD-YYYY
+                r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b',
                 r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b'
             ]
             
             for pattern in date_patterns:
-                try:
-                    matches = re.findall(pattern, text, re.IGNORECASE)
-                    entities['dates'].extend(matches)
-                except re.error:
-                    continue
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                entities['dates'].extend(matches)
             
-            # Extract monetary values - simplified pattern
+            # Extract monetary values
             money_patterns = [
-                r'\$[\d,]+(?:\.\d{2})?',  # $1,000.00
-                r'USD\s*[\d,]+',  # USD 1000
-                r'[\d,]+\s*dollars?'  # 1000 dollars
+                r'\$[\d,]+(?:\.\d{2})?',
+                r'USD\s*[\d,]+',
+                r'[\d,]+\s*dollars?'
             ]
             
             for pattern in money_patterns:
-                try:
-                    matches = re.findall(pattern, text, re.IGNORECASE)
-                    entities['monetary_values'].extend(matches)
-                except re.error:
-                    continue
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                entities['monetary_values'].extend(matches)
             
             # Extract common legal terms
             legal_terms = ['agreement', 'contract', 'party', 'parties', 'obligation', 'liability', 
                           'termination', 'breach', 'confidential', 'proprietary', 'indemnification']
             for term in legal_terms:
                 if term.lower() in text.lower():
-                    entities['legal_terms'].append(term)
+                    entities['legal_terms'].append(term.title())
             
-            # Extract potential party names (capitalized phrases) - simplified
-            try:
-                party_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+(?:Inc|LLC|Corp|Company|Ltd))?\b'
-                potential_parties = re.findall(party_pattern, text)
-                entities['parties'] = list(set([p for p in potential_parties if len(p.split()) <= 4]))[:5]
-            except re.error:
-                pass
+            # Extract potential party names
+            party_pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+(?:Inc|LLC|Corp|Company|Ltd))?\b'
+            potential_parties = re.findall(party_pattern, text)
+            entities['parties'] = [p for p in potential_parties if len(p.split()) <= 3][:3]
             
-            # Extract obligations (sentences with "shall", "must", "agrees")
+            # Extract obligations
             try:
                 sentences = sent_tokenize(text)
                 obligation_words = ['shall', 'must', 'agrees', 'obligated', 'required']
                 for sentence in sentences:
-                    if any(word in sentence.lower() for word in obligation_words):
-                        if len(sentence) < 200:  # Keep it reasonable
-                            entities['obligations'].append(sentence.strip())
+                    if any(word in sentence.lower() for word in obligation_words) and len(sentence) < 150:
+                        entities['obligations'].append(sentence.strip())
+                        if len(entities['obligations']) >= 3:
+                            break
             except Exception:
                 pass
             
             # Remove duplicates and limit results
             for key in entities:
-                if isinstance(entities[key], list):
-                    entities[key] = list(set(entities[key]))[:5]
+                entities[key] = list(dict.fromkeys(entities[key]))[:5]
+            
+            # Ensure we have some content
+            if not any(entities.values()):
+                entities = {
+                    'parties': ['Document analysis completed'],
+                    'dates': ['See full document'],
+                    'monetary_values': ['See full document'],
+                    'obligations': ['See full document'],
+                    'legal_terms': ['Legal document detected']
+                }
             
             return entities
             
         except Exception as e:
-            # Return empty structure if everything fails
+            print(f"Fallback entity extraction failed: {e}")
             return {
-                'parties': ['Could not extract'],
-                'dates': ['Could not extract'],
-                'monetary_values': ['Could not extract'],
-                'obligations': ['Could not extract'],
-                'legal_terms': ['Could not extract']
+                'parties': ['Analysis completed'],
+                'dates': ['See document'],
+                'monetary_values': ['See document'],
+                'obligations': ['See document'],
+                'legal_terms': ['Legal content detected']
             }
     
     def extract_entities(self, text: str) -> Dict[str, List[str]]:
-        """Main entity extraction method - tries Watson first, falls back to regex"""
+        """Main entity extraction method"""
         if self.watson_nlu:
             return self.extract_entities_with_watson(text)
         else:

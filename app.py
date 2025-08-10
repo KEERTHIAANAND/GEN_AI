@@ -45,7 +45,7 @@ def main():
     
     # Header
     st.title("⚖️ ClauseWise Legal Document Analyzer")
-    st.markdown("*Advanced AI-powered legal document analysis with IBM Watson & Granite*")
+    st.markdown("*AI-powered legal document analysis with IBM Watson & Granite*")
     
     # Display API status
     display_api_status(ai_analyzer, doc_processor)
@@ -71,7 +71,6 @@ def main():
         st.stop()
     
     # Main application
-    # Sidebar
     st.sidebar.header("📄 Document Upload")
     st.sidebar.markdown(f"**Supported formats:** {', '.join(Config.SUPPORTED_FORMATS).upper()}")
     st.sidebar.markdown(f"**Max file size:** {Config.MAX_FILE_SIZE // (1024*1024)}MB")
@@ -100,32 +99,32 @@ def main():
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            with st.spinner("Analyzing document with advanced AI..."):
+            with st.spinner("Processing document with AI..."):
                 try:
                     # Step 1: Extract text
                     status_text.text("📖 Extracting text from document...")
-                    progress_bar.progress(10)
+                    progress_bar.progress(15)
                     
                     raw_text = doc_processor.extract_text(uploaded_file, file_type)
                     
                     if not raw_text or len(raw_text.strip()) < 50:
-                        st.error("❌ Document appears to be empty or text extraction failed. Please try a different file.")
+                        st.error("❌ Document appears to be empty or text extraction failed.")
                         st.stop()
                     
                     clean_text = doc_processor.clean_text(raw_text)
-                    progress_bar.progress(20)
+                    progress_bar.progress(25)
                     
                     if len(clean_text) < 50:
-                        st.error("❌ Document text is too short for analysis. Please upload a more substantial document.")
+                        st.error("❌ Document text is too short for analysis.")
                         st.stop()
                     
                     # Step 2: AI Classification
-                    status_text.text("🤖 Classifying document with Watson AI...")
+                    status_text.text("🤖 Classifying document...")
                     progress_bar.progress(40)
                     document_type = ai_analyzer.classify_document(clean_text)
                     
                     # Step 3: Text Simplification
-                    status_text.text("📝 Simplifying text with Granite model...")
+                    status_text.text("📝 Simplifying with AI...")
                     progress_bar.progress(60)
                     simplified_text = ai_analyzer.simplify_text(clean_text)
                     
@@ -133,46 +132,25 @@ def main():
                     status_text.text("🔍 Extracting key information...")
                     progress_bar.progress(75)
                     
-                    try:
-                        clauses = doc_processor.extract_clauses(clean_text)
-                        if not clauses:
-                            clauses = ["Could not extract specific clauses. Please review the full simplified text."]
-                    except Exception as e:
-                        clauses = [f"Clause extraction encountered an issue: {str(e)}"]
-                    
-                    try:
-                        entities = doc_processor.extract_entities(clean_text)
-                    except Exception as e:
-                        entities = {
-                            'parties': [f'Error: {str(e)[:50]}...'],
-                            'dates': ['Could not extract'],
-                            'monetary_values': ['Could not extract'],
-                            'obligations': ['Could not extract'],
-                            'legal_terms': ['Could not extract']
-                        }
+                    clauses = doc_processor.extract_clauses(clean_text)
+                    entities = doc_processor.extract_entities(clean_text)
                     
                     # Step 5: Generate explanations
-                    status_text.text("💡 Generating AI explanations...")
+                    status_text.text("💡 Generating explanations...")
                     progress_bar.progress(90)
                     
                     clause_explanations = []
-                    for clause in clauses:
-                        try:
-                            explanation = ai_analyzer.explain_clause(clause)
-                            clause_explanations.append(explanation)
-                        except Exception as e:
-                            clause_explanations.append(f"Could not generate explanation: {str(e)[:50]}...")
+                    for clause in clauses[:5]:  # Limit to 5 clauses
+                        explanation = ai_analyzer.explain_clause(clause)
+                        clause_explanations.append(explanation)
                     
                     # Step 6: Generate summary
-                    try:
-                        summary = ai_analyzer.generate_summary(clean_text, entities, document_type)
-                    except Exception as e:
-                        summary = f"**Document Type:** {document_type}\n\n**Word Count:** {len(clean_text.split())} words\n\n**Status:** Analysis completed with some limitations: {str(e)[:100]}..."
+                    summary = ai_analyzer.generate_summary(clean_text, entities, document_type)
                     
                     progress_bar.progress(100)
                     status_text.text("✅ Analysis complete!")
                     
-                    # Store results in session state
+                    # Store results
                     st.session_state.analysis_results = {
                         'original_text': clean_text,
                         'simplified_text': simplified_text,
@@ -186,23 +164,23 @@ def main():
                         'analysis_timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     
-                    # Clear progress indicators
+                    # Clear progress
                     progress_bar.empty()
                     status_text.empty()
                     
-                    st.success("🎉 Document analysis completed successfully!")
+                    st.success("🎉 Analysis completed successfully!")
                     
                 except Exception as e:
                     st.error(f"❌ Error processing document: {str(e)}")
-                    st.info("💡 Try uploading a different file or check if the document is not corrupted.")
+                    st.info("💡 Please try uploading a different file.")
                     st.stop()
     
     # Display results
     if 'analysis_results' in st.session_state:
         results = st.session_state.analysis_results
         
-        # Results header with enhanced info
-        st.header(f"📊 AI Analysis Results")
+        # Results header
+        st.header("📊 AI Analysis Results")
         
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -214,12 +192,12 @@ def main():
         
         st.divider()
         
-        # Tabs for different views
+        # Tabs for results
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📋 Executive Summary", 
+            "📋 Summary", 
             "🔍 Key Information", 
             "📝 Clause Analysis", 
-            "📖 Simplified Document",
+            "📖 Simplified Text",
             "📥 Download Report"
         ])
         
@@ -235,14 +213,6 @@ def main():
                 st.metric("📂 Document Type", results['document_type'])
                 st.metric("📝 Word Count", len(results['original_text'].split()))
                 st.metric("📄 Clauses Found", len(results['clauses']))
-                
-                # Analysis quality indicator
-                if "Watson NLU + Granite" in results['summary']:
-                    st.success("🚀 Premium AI Analysis")
-                elif "Watson NLU" in results['summary']:
-                    st.info("⚡ Enhanced Analysis")
-                else:
-                    st.warning("⚙️ Standard Analysis")
         
         with tab2:
             st.subheader("🔍 Extracted Key Information")
@@ -252,71 +222,58 @@ def main():
             col1, col2 = st.columns(2)
             
             with col1:
-                if entities['parties'] and not any('Could not extract' in str(p) for p in entities['parties']):
-                    st.markdown("**👥 Parties Involved:**")
-                    for party in entities['parties']:
+                if entities.get('parties'):
+                    st.markdown("**👥 Parties:**")
+                    for party in entities['parties'][:5]:
                         st.write(f"• {party}")
-                else:
-                    st.info("👥 Parties: Could not extract specific party information")
                 
-                if entities['dates'] and not any('Could not extract' in str(d) for d in entities['dates']):
+                if entities.get('dates'):
                     st.markdown("**📅 Important Dates:**")
-                    for date in entities['dates']:
+                    for date in entities['dates'][:5]:
                         st.write(f"• {date}")
-                else:
-                    st.info("📅 Dates: Could not extract specific date information")
             
             with col2:
-                if entities['monetary_values'] and not any('Could not extract' in str(m) for m in entities['monetary_values']):
+                if entities.get('monetary_values'):
                     st.markdown("**💰 Financial Terms:**")
-                    for value in entities['monetary_values']:
+                    for value in entities['monetary_values'][:5]:
                         st.write(f"• {value}")
-                else:
-                    st.info("💰 Financial Terms: Could not extract specific monetary information")
                 
-                if entities['legal_terms'] and not any('Could not extract' in str(t) for t in entities['legal_terms']):
-                    st.markdown("**⚖️ Key Legal Terms:**")
-                    for term in entities['legal_terms'][:8]:  # Show more terms
+                if entities.get('legal_terms'):
+                    st.markdown("**⚖️ Legal Terms:**")
+                    for term in entities['legal_terms'][:8]:
                         st.write(f"• {term}")
-                else:
-                    st.info("⚖️ Legal Terms: Could not extract specific legal terminology")
             
-            if entities['obligations'] and not any('Could not extract' in str(o) for o in entities['obligations']):
+            if entities.get('obligations'):
                 st.markdown("**📋 Key Obligations:**")
                 for obligation in entities['obligations'][:3]:
                     st.info(f"📌 {obligation}")
         
         with tab3:
-            st.subheader("📝 AI-Powered Clause Analysis")
+            st.subheader("📝 Clause Analysis")
             
             if results['clauses'] and results['clause_explanations']:
                 for i, (clause, explanation) in enumerate(zip(results['clauses'], results['clause_explanations'])):
                     with st.expander(f"📄 Clause {i+1}: {explanation[:60]}..."):
-                        st.markdown("**🔤 Original Legal Text:**")
+                        st.markdown("**Original Text:**")
                         st.text_area("", clause, height=100, key=f"clause_{i}", disabled=True)
                         
-                        st.markdown("**💡 AI Explanation (Plain English):**")
+                        st.markdown("**Plain English Explanation:**")
                         st.success(explanation)
-                        
-                        # Clause importance indicator
-                        importance_keywords = ['termination', 'liability', 'payment', 'confidential', 'breach']
-                        if any(keyword in clause.lower() for keyword in importance_keywords):
-                            st.warning("⚠️ This appears to be a critical clause requiring careful attention")
             else:
-                st.info("Could not extract individual clauses from this document. Please check the simplified document tab for the complete analysis.")
+                st.info("Clause analysis completed. Check the simplified document for full content.")
         
         with tab4:
-            st.subheader("📖 AI-Simplified Document")
+            st.subheader("📖 Simplified Document")
             
             col1, col2 = st.columns([3, 1])
             
             with col1:
-                st.markdown("**🤖 Granite AI Simplified Version:**")
-                with st.container(height=500):
-                    st.markdown(results['simplified_text'])
+                st.markdown("**AI-Simplified Version:**")
+                # Use text_area instead of container with height
+                st.text_area("Simplified Content", results['simplified_text'], height=400, disabled=True)
             
             with col2:
-                st.markdown("**📊 Simplification Metrics:**")
+                st.markdown("**📊 Analysis Metrics:**")
                 original_words = len(results['original_text'].split())
                 simplified_words = len(results['simplified_text'].split())
                 
@@ -326,30 +283,21 @@ def main():
                 if simplified_words != original_words:
                     if simplified_words < original_words:
                         reduction = ((original_words - simplified_words) / original_words) * 100
-                        st.metric("📉 Complexity Reduction", f"{reduction:.1f}%")
+                        st.metric("📉 Reduction", f"{reduction:.1f}%")
                     else:
                         expansion = ((simplified_words - original_words) / original_words) * 100
-                        st.metric("📈 Content Expansion", f"{expansion:.1f}%")
-                
-                st.markdown("---")
-                st.markdown("**🎯 Readability:**")
-                if "IBM Watson NLU + Granite" in results['summary']:
-                    st.success("🚀 Premium AI Enhanced")
-                elif "Granite Model" in results['summary']:
-                    st.success("⚡ AI Enhanced")
-                else:
-                    st.info("⚙️ Rule-based")
+                        st.metric("📈 Enhancement", f"{expansion:.1f}%")
         
         with tab5:
-            st.subheader("📥 Generate Analysis Report")
+            st.subheader("📥 Generate PDF Report")
             
             col1, col2, col3 = st.columns([1, 2, 1])
             
             with col2:
-                st.info("📋 Generate a comprehensive PDF report of your AI-powered document analysis")
+                st.info("📋 Generate a comprehensive PDF report of your analysis")
                 
-                if st.button("📄 Generate Premium PDF Report", type="primary", use_container_width=True):
-                    with st.spinner("🤖 AI is generating your comprehensive report..."):
+                if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+                    with st.spinner("🤖 Generating PDF report..."):
                         try:
                             pdf_bytes = pdf_generator.generate_analysis_report(
                                 results['original_text'],
@@ -362,60 +310,54 @@ def main():
                             )
                             
                             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                            filename = f"ClauseWise_AI_Analysis_{timestamp}.pdf"
+                            filename = f"ClauseWise_Analysis_{timestamp}.pdf"
                             
                             st.download_button(
-                                label="📥 Download AI Analysis Report",
+                                label="📥 Download Analysis Report",
                                 data=pdf_bytes,
                                 file_name=filename,
                                 mime="application/pdf",
                                 use_container_width=True
                             )
                             
-                            st.success("✅ Premium AI report generated successfully!")
+                            st.success("✅ PDF report generated successfully!")
                             st.balloons()
                             
                         except Exception as e:
-                            st.error(f"❌ Error generating PDF report: {str(e)}")
-                            st.info("💡 Please try again or contact support if the issue persists.")
+                            st.error(f"❌ Error generating PDF: {str(e)}")
     
     else:
-        # Welcome screen when no document is uploaded
+        # Welcome screen
         st.markdown("""
         ### 🚀 Welcome to ClauseWise AI Legal Analyzer
         
-        **Powered by IBM Watson & Granite AI Models**
+        **Powered by IBM Watson & Granite AI**
         
-        📋 **What ClauseWise Can Do:**
-        - 🤖 **AI Document Classification** - Automatically identify contract types
-        - 📝 **Intelligent Text Simplification** - Convert complex legal jargon to plain English  
-        - 🔍 **Advanced Entity Recognition** - Extract parties, dates, financial terms
-        - 💡 **Smart Clause Explanation** - Get AI-powered explanations for each clause
-        - 📊 **Comprehensive Analysis** - Generate detailed insights and summaries
-        - 📄 **Professional Reports** - Download analysis as PDF reports
+        📋 **Features:**
+        - 🤖 **AI Document Classification** - Identify contract types automatically
+        - 📝 **Intelligent Simplification** - Convert legal jargon to plain English  
+        - 🔍 **Entity Recognition** - Extract parties, dates, financial terms
+        - 💡 **Clause Explanation** - Get AI-powered explanations
+        - 📄 **PDF Reports** - Download comprehensive analysis
         
-        **🎯 Perfect for:** Lawyers, Business Professionals, Students, Anyone dealing with legal documents
-        
-        **⬅️ Get started by uploading a document in the sidebar!**
+        **⬅️ Upload a document to get started!**
         """)
         
-        # Feature showcase
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.info("🤖 **AI-Powered**\n\nUtilizes IBM Watson NLU and Granite models for advanced analysis")
+            st.info("🤖 **AI-Powered**\n\nAdvanced IBM Watson and Granite AI analysis")
         with col2:
-            st.info("📊 **Comprehensive**\n\nExtracts entities, classifies documents, and explains clauses")
+            st.info("📊 **Comprehensive**\n\nComplete document analysis and insights")
         with col3:
-            st.info("📄 **Professional**\n\nGenerate detailed PDF reports for your analysis")
+            st.info("📄 **Professional**\n\nDownloadable PDF reports")
     
     # Footer
     st.divider()
     st.markdown(
         """
         <div style='text-align: center; color: #666; font-size: 14px;'>
-            <p><strong>ClauseWise Legal Document Analyzer v2.0</strong> | Powered by IBM Watson & Granite AI</p>
-            <p><small>⚠️ This tool provides AI-generated analysis for informational purposes only. Always consult qualified legal counsel for legal decisions.</small></p>
-            <p><small>🔐 Your documents are processed securely using enterprise-grade IBM AI services.</small></p>
+            <p><strong>ClauseWise Legal Document Analyzer</strong> | Powered by IBM Watson & Granite AI</p>
+            <p><small>⚠️ For informational purposes only. Always consult qualified legal counsel.</small></p>
         </div>
         """, 
         unsafe_allow_html=True
