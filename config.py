@@ -28,11 +28,10 @@ class Config:
     WATSON_ASSISTANT_API_KEY = os.getenv('WATSON_ASSISTANT_API_KEY')
     WATSON_ASSISTANT_URL = os.getenv('WATSON_ASSISTANT_URL')
     
-    # IBM Granite Model (watsonx.ai)
-    WATSONX_API_KEY = os.getenv('WATSONX_API_KEY')
-    WATSONX_PROJECT_ID = os.getenv('WATSONX_PROJECT_ID')
-    WATSONX_URL = os.getenv('WATSONX_URL')
-    GRANITE_MODEL_ID = os.getenv('GRANITE_MODEL_ID', 'ibm/granite-13b-instruct-v2')
+    # Hugging Face API
+    HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY')
+    HUGGINGFACE_MODEL = "microsoft/DialoGPT-medium"
+    HUGGINGFACE_SUMMARIZATION_MODEL = "facebook/bart-large-cnn"
     
     # Terms and Conditions
     TERMS_CONDITIONS = '''
@@ -42,11 +41,11 @@ class Config:
     
     2. **No Legal Advice**: The analysis provided does not constitute legal advice. Always consult with a qualified attorney for legal matters.
     
-    3. **Data Privacy**: Your uploaded documents are processed using IBM Watson services and are handled according to IBM's privacy policies.
+    3. **Data Privacy**: Your uploaded documents are processed using IBM Watson and Hugging Face services and are handled according to their privacy policies.
     
     4. **Accuracy**: While we strive for accuracy using advanced AI, the analysis may contain errors. Please review all results carefully.
     
-    5. **API Usage**: This tool uses IBM Watson and Granite AI services for enhanced analysis.
+    5. **API Usage**: This tool uses IBM Watson and Hugging Face AI services for enhanced analysis.
     
     6. **Limitation of Liability**: We are not responsible for any decisions made based on the analysis provided by this tool.
     

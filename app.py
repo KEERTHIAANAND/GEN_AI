@@ -34,18 +34,18 @@ def display_api_status(ai_analyzer, doc_processor):
         else:
             st.warning("⚠️ Watson NLU: Using Fallback")
         
-        # Granite Model Status
-        if ai_analyzer.granite_model:
-            st.success("✅ Granite Model Connected")
+        # Hugging Face Status
+        if ai_analyzer.huggingface_api_key:
+            st.success("✅ Hugging Face Connected")
         else:
-            st.warning("⚠️ Granite: Using Fallback")
+            st.warning("⚠️ Hugging Face: Using Fallback")
 
 def main():
     doc_processor, ai_analyzer, pdf_generator = init_components()
     
     # Header
     st.title("⚖️ ClauseWise Legal Document Analyzer")
-    st.markdown("*AI-powered legal document analysis with IBM Watson & Granite*")
+    st.markdown("*AI-powered legal document analysis with IBM Watson & Hugging Face*")
     
     # Display API status
     display_api_status(ai_analyzer, doc_processor)
@@ -249,26 +249,26 @@ def main():
                     st.info(f"📌 {obligation}")
         
         with tab3:
-            st.subheader("📝 Clause Analysis")
+            st.subheader("📝 AI-Powered Clause Analysis")
             
             if results['clauses'] and results['clause_explanations']:
                 for i, (clause, explanation) in enumerate(zip(results['clauses'], results['clause_explanations'])):
                     with st.expander(f"📄 Clause {i+1}: {explanation[:60]}..."):
-                        st.markdown("**Original Text:**")
+                        st.markdown("**Original Legal Text:**")
                         st.text_area("", clause, height=100, key=f"clause_{i}", disabled=True)
                         
-                        st.markdown("**Plain English Explanation:**")
+                        st.markdown("**AI Explanation (Plain English):**")
                         st.success(explanation)
             else:
                 st.info("Clause analysis completed. Check the simplified document for full content.")
         
         with tab4:
-            st.subheader("📖 Simplified Document")
+            st.subheader("📖 AI-Simplified Document")
             
             col1, col2 = st.columns([3, 1])
             
             with col1:
-                st.markdown("**AI-Simplified Version:**")
+                st.markdown("**Hugging Face AI Simplified Version:**")
                 # Use text_area instead of container with height
                 st.text_area("Simplified Content", results['simplified_text'], height=400, disabled=True)
             
@@ -287,17 +287,28 @@ def main():
                     else:
                         expansion = ((simplified_words - original_words) / original_words) * 100
                         st.metric("📈 Enhancement", f"{expansion:.1f}%")
+                
+                st.markdown("---")
+                st.markdown("**🎯 AI Enhancement:**")
+                if ai_analyzer.watson_nlu and ai_analyzer.huggingface_api_key:
+                    st.success("🚀 Premium AI Enhanced")
+                elif ai_analyzer.huggingface_api_key:
+                    st.success("⚡ Hugging Face Enhanced")
+                elif ai_analyzer.watson_nlu:
+                    st.success("⚡ Watson Enhanced")
+                else:
+                    st.info("⚙️ Rule-based")
         
         with tab5:
-            st.subheader("📥 Generate PDF Report")
+            st.subheader("📥 Generate Analysis Report")
             
             col1, col2, col3 = st.columns([1, 2, 1])
             
             with col2:
-                st.info("📋 Generate a comprehensive PDF report of your analysis")
+                st.info("📋 Generate a comprehensive PDF report of your AI-powered analysis")
                 
-                if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
-                    with st.spinner("🤖 Generating PDF report..."):
+                if st.button("📄 Generate Premium PDF Report", type="primary", use_container_width=True):
+                    with st.spinner("🤖 AI is generating your comprehensive report..."):
                         try:
                             pdf_bytes = pdf_generator.generate_analysis_report(
                                 results['original_text'],
@@ -310,54 +321,60 @@ def main():
                             )
                             
                             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                            filename = f"ClauseWise_Analysis_{timestamp}.pdf"
+                            filename = f"ClauseWise_AI_Analysis_{timestamp}.pdf"
                             
                             st.download_button(
-                                label="📥 Download Analysis Report",
+                                label="📥 Download AI Analysis Report",
                                 data=pdf_bytes,
                                 file_name=filename,
                                 mime="application/pdf",
                                 use_container_width=True
                             )
                             
-                            st.success("✅ PDF report generated successfully!")
+                            st.success("✅ Premium AI report generated successfully!")
                             st.balloons()
                             
                         except Exception as e:
-                            st.error(f"❌ Error generating PDF: {str(e)}")
+                            st.error(f"❌ Error generating PDF report: {str(e)}")
+                            st.info("💡 Please try again or contact support if the issue persists.")
     
     else:
         # Welcome screen
         st.markdown("""
         ### 🚀 Welcome to ClauseWise AI Legal Analyzer
         
-        **Powered by IBM Watson & Granite AI**
+        **Powered by IBM Watson & Hugging Face AI**
         
-        📋 **Features:**
-        - 🤖 **AI Document Classification** - Identify contract types automatically
-        - 📝 **Intelligent Simplification** - Convert legal jargon to plain English  
-        - 🔍 **Entity Recognition** - Extract parties, dates, financial terms
-        - 💡 **Clause Explanation** - Get AI-powered explanations
-        - 📄 **PDF Reports** - Download comprehensive analysis
+        📋 **What ClauseWise Can Do:**
+        - 🤖 **AI Document Classification** - Automatically identify contract types
+        - 📝 **Intelligent Text Simplification** - Convert complex legal jargon to plain English  
+        - 🔍 **Advanced Entity Recognition** - Extract parties, dates, financial terms
+        - 💡 **Smart Clause Explanation** - Get AI-powered explanations for each clause
+        - 📊 **Comprehensive Analysis** - Generate detailed insights and summaries
+        - 📄 **Professional Reports** - Download analysis as PDF reports
         
-        **⬅️ Upload a document to get started!**
+        **🎯 Perfect for:** Lawyers, Business Professionals, Students, Anyone dealing with legal documents
+        
+        **⬅️ Get started by uploading a document in the sidebar!**
         """)
         
+        # Feature showcase
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.info("🤖 **AI-Powered**\n\nAdvanced IBM Watson and Granite AI analysis")
+            st.info("🤖 **AI-Powered**\n\nUtilizes IBM Watson NLU and Hugging Face models for advanced analysis")
         with col2:
-            st.info("📊 **Comprehensive**\n\nComplete document analysis and insights")
+            st.info("📊 **Comprehensive**\n\nExtracts entities, classifies documents, and explains clauses")
         with col3:
-            st.info("📄 **Professional**\n\nDownloadable PDF reports")
+            st.info("📄 **Professional**\n\nGenerate detailed PDF reports for your analysis")
     
     # Footer
     st.divider()
     st.markdown(
         """
         <div style='text-align: center; color: #666; font-size: 14px;'>
-            <p><strong>ClauseWise Legal Document Analyzer</strong> | Powered by IBM Watson & Granite AI</p>
-            <p><small>⚠️ For informational purposes only. Always consult qualified legal counsel.</small></p>
+            <p><strong>ClauseWise Legal Document Analyzer v2.0</strong> | Powered by IBM Watson & Hugging Face AI</p>
+            <p><small>⚠️ This tool provides AI-generated analysis for informational purposes only. Always consult qualified legal counsel for legal decisions.</small></p>
+            <p><small>🔐 Your documents are processed securely using enterprise-grade AI services.</small></p>
         </div>
         """, 
         unsafe_allow_html=True

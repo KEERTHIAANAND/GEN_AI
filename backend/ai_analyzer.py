@@ -1,5 +1,7 @@
 from typing import Dict, List
 import re
+import requests
+import json
 from config import Config
 
 # IBM Watson imports
@@ -12,19 +14,11 @@ except ImportError:
     WATSON_AVAILABLE = False
     print("Watson SDK not available")
 
-# IBM watsonx imports
-try:
-    from ibm_watsonx_ai.foundation_models import Model
-    from ibm_watsonx_ai.metanames import GenTextParamsMetaNames as GenParams
-    WATSONX_AVAILABLE = True
-except ImportError:
-    WATSONX_AVAILABLE = False
-    print("WatsonX SDK not available")
-
 class AIAnalyzer:
     def __init__(self):
         self.watson_nlu = None
-        self.granite_model = None
+        self.huggingface_api_key = Config.HUGGINGFACE_API_KEY
+        self.huggingface_api_url = "https://api-inference.huggingface.co/models/"
         
         # Initialize Watson NLU
         if WATSON_AVAILABLE and Config.WATSON_NLU_API_KEY:
@@ -38,29 +32,6 @@ class AIAnalyzer:
                 print("Watson NLU initialized successfully in AIAnalyzer")
             except Exception as e:
                 print(f"Watson NLU initialization failed: {e}")
-        
-        # Initialize Granite Model
-        if WATSONX_AVAILABLE and Config.WATSONX_API_KEY:
-            try:
-                self.granite_model = Model(
-                    model_id=Config.GRANITE_MODEL_ID,
-                    params={
-                        GenParams.DECODING_METHOD: "greedy",
-                        GenParams.MAX_NEW_TOKENS: 800,
-                        GenParams.MIN_NEW_TOKENS: 50,
-                        GenParams.TEMPERATURE: 0.3,
-                        GenParams.TOP_K: 50,
-                        GenParams.TOP_P: 1
-                    },
-                    credentials={
-                        "apikey": Config.WATSONX_API_KEY,
-                        "url": Config.WATSONX_URL
-                    },
-                    project_id=Config.WATSONX_PROJECT_ID
-                )
-                print("Granite model initialized successfully")
-            except Exception as e:
-                print(f"Granite model initialization failed: {e}")
         
         # Document classification keywords
         self.document_keywords = {
@@ -88,6 +59,40 @@ class AIAnalyzer:
                 'license', 'licensor', 'licensee', 'intellectual property'
             ]
         }
+    
+    def query_huggingface_api(self, model_name: str, payload: dict, max_retries: int = 3) -> dict:
+        """Query Hugging Face API with retry mechanism"""
+        headers = {"Authorization": f"Bearer {self.huggingface_api_key}"}
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    f"{self.huggingface_api_url}{model_name}",
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 503:
+                    # Model is loading, wait and retry
+                    print(f"Model loading, attempt {attempt + 1}/{max_retries}")
+                    if attempt < max_retries - 1:
+                        import time
+                        time.sleep(10)
+                        continue
+                else:
+                    print(f"HuggingFace API error: {response.status_code} - {response.text}")
+                    break
+                    
+            except Exception as e:
+                print(f"HuggingFace API request failed (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(5)
+        
+        return None
     
     def classify_document_with_watson(self, text: str) -> str:
         """Classify document using Watson NLU"""
@@ -146,20 +151,20 @@ class AIAnalyzer:
         else:
             return self.classify_document_fallback(text)
     
-    def simplify_text_with_granite(self, text: str) -> str:
-        """Simplify text using Granite model"""
-        if not self.granite_model:
+    def simplify_text_with_huggingface(self, text: str) -> str:
+        """Simplify text using Hugging Face API"""
+        if not self.huggingface_api_key:
             return self.simplify_text_fallback(text)
         
         try:
             # Split text into chunks if too long
             text_chunks = []
-            if len(text) > 2000:
+            if len(text) > 1000:
                 # Split into paragraphs or sentences
                 chunks = text.split('\n\n')
                 current_chunk = ""
                 for chunk in chunks:
-                    if len(current_chunk + chunk) < 2000:
+                    if len(current_chunk + chunk) < 1000:
                         current_chunk += chunk + "\n\n"
                     else:
                         if current_chunk:
@@ -172,38 +177,42 @@ class AIAnalyzer:
             
             simplified_parts = []
             
+            # Try summarization model first
             for chunk in text_chunks[:3]:  # Limit to 3 chunks
-                prompt = f"""Simplify this legal text into plain English. Keep all important information but make it easy to understand:
-
-{chunk}
-
-Simplified version:"""
-                
                 try:
-                    response = self.granite_model.generate_text(prompt=prompt)
-                    if response and len(response.strip()) > 20:
-                        # Clean up response
-                        simplified = response.strip()
-                        if "Simplified version:" in simplified:
-                            simplified = simplified.split("Simplified version:")[-1].strip()
-                        if simplified and len(simplified) > 20:
-                            simplified_parts.append(simplified)
+                    payload = {
+                        "inputs": f"Simplify this legal text into plain English: {chunk[:500]}",
+                        "parameters": {
+                            "max_length": 300,
+                            "min_length": 50,
+                            "do_sample": False
+                        }
+                    }
+                    
+                    result = self.query_huggingface_api(Config.HUGGINGFACE_SUMMARIZATION_MODEL, payload)
+                    
+                    if result and isinstance(result, list) and len(result) > 0:
+                        summary_text = result[0].get('summary_text', '')
+                        if summary_text and len(summary_text) > 20:
+                            simplified_parts.append(summary_text)
                         else:
                             simplified_parts.append(self.simplify_text_fallback(chunk))
                     else:
                         simplified_parts.append(self.simplify_text_fallback(chunk))
+                        
                 except Exception as e:
-                    print(f"Error with granite chunk processing: {e}")
+                    print(f"Error with HuggingFace chunk processing: {e}")
                     simplified_parts.append(self.simplify_text_fallback(chunk))
             
             if simplified_parts:
                 result = "\n\n".join(simplified_parts)
-                return result if len(result) > 50 else self.simplify_text_fallback(text)
+                intro = "**AI-Simplified Legal Document**\n\nThis document has been simplified using advanced AI for easier understanding:\n\n"
+                return intro + result if len(result) > 50 else self.simplify_text_fallback(text)
             else:
                 return self.simplify_text_fallback(text)
                 
         except Exception as e:
-            print(f"Granite simplification failed: {e}")
+            print(f"HuggingFace simplification failed: {e}")
             return self.simplify_text_fallback(text)
     
     def simplify_text_fallback(self, text: str) -> str:
@@ -223,50 +232,81 @@ Simplified version:"""
             r'\bshall not be liable\b': 'is not responsible',
             r'\bforce majeure\b': 'unexpected events beyond control',
             r'\bindemnify\b': 'protect from legal claims',
-            r'\bhold harmless\b': 'protect from responsibility'
+            r'\bhold harmless\b': 'protect from responsibility',
+            r'\bwhereas\b': 'given that',
+            r'\bthereby\b': 'by doing this',
+            r'\bwherein\b': 'in which',
+            r'\bwhereby\b': 'by which'
         }
         
         simplified = text
         for legal_term, simple_term in simplifications.items():
             simplified = re.sub(legal_term, simple_term, simplified, flags=re.IGNORECASE)
         
-        # Add introductory text
+        # Add sections for better readability
         intro = "**Simplified Legal Document**\n\nThis document has been simplified for easier understanding:\n\n"
+        
+        # Break into paragraphs if very long
+        if len(simplified) > 1000:
+            paragraphs = simplified.split('. ')
+            formatted_paragraphs = []
+            current_para = ""
+            
+            for sentence in paragraphs:
+                current_para += sentence + ". "
+                if len(current_para) > 200:
+                    formatted_paragraphs.append(current_para.strip())
+                    current_para = ""
+            
+            if current_para:
+                formatted_paragraphs.append(current_para.strip())
+            
+            simplified = "\n\n".join(formatted_paragraphs)
+        
         return intro + simplified
     
     def simplify_text(self, text: str) -> str:
         """Main text simplification method"""
-        if self.granite_model:
-            return self.simplify_text_with_granite(text)
+        if self.huggingface_api_key:
+            return self.simplify_text_with_huggingface(text)
         else:
             return self.simplify_text_fallback(text)
     
-    def explain_clause_with_granite(self, clause: str) -> str:
-        """Generate clause explanation using Granite model"""
-        if not self.granite_model:
+    def explain_clause_with_huggingface(self, clause: str) -> str:
+        """Generate clause explanation using Hugging Face"""
+        if not self.huggingface_api_key:
             return self.explain_clause_fallback(clause)
         
         try:
             # Limit clause length
             clause_text = clause[:400] if len(clause) > 400 else clause
             
-            prompt = f"""Explain this legal clause in simple terms that anyone can understand. Focus on what it means in practice:
-
-"{clause_text}"
-
-Simple explanation:"""
+            # Try to get explanation using text generation
+            payload = {
+                "inputs": f"Explain this legal clause in simple terms: {clause_text}",
+                "parameters": {
+                    "max_length": 200,
+                    "min_length": 30,
+                    "temperature": 0.7,
+                    "do_sample": True
+                }
+            }
             
-            response = self.granite_model.generate_text(prompt=prompt)
-            if response and len(response.strip()) > 10:
-                explanation = response.strip()
-                if "Simple explanation:" in explanation:
-                    explanation = explanation.split("Simple explanation:")[-1].strip()
-                return explanation if explanation else self.explain_clause_fallback(clause)
+            result = self.query_huggingface_api("microsoft/DialoGPT-medium", payload)
+            
+            if result and isinstance(result, list) and len(result) > 0:
+                explanation = result[0].get('generated_text', '')
+                if explanation and len(explanation) > 20:
+                    # Clean up the explanation
+                    explanation = explanation.replace(f"Explain this legal clause in simple terms: {clause_text}", "").strip()
+                    return explanation if explanation else self.explain_clause_fallback(clause)
+                else:
+                    return self.explain_clause_fallback(clause)
             else:
                 return self.explain_clause_fallback(clause)
                 
         except Exception as e:
-            print(f"Granite clause explanation failed: {e}")
+            print(f"HuggingFace clause explanation failed: {e}")
             return self.explain_clause_fallback(clause)
     
     def explain_clause_fallback(self, clause: str) -> str:
@@ -281,7 +321,10 @@ Simple explanation:"""
             ['breach', 'violation', 'default']: "This explains what happens if someone doesn't follow the agreement.",
             ['force majeure', 'uncontrollable', 'acts of god']: "This covers situations beyond anyone's control that prevent fulfilling the agreement.",
             ['indemnify', 'hold harmless']: "This means one party will protect the other from legal claims or financial losses.",
-            ['governing law', 'jurisdiction']: "This determines which state's or country's laws apply to this agreement."
+            ['governing law', 'jurisdiction']: "This determines which state's or country's laws apply to this agreement.",
+            ['intellectual property', 'copyright', 'patent']: "This covers ownership and use of ideas, inventions, or creative works.",
+            ['warranty', 'guarantee']: "This is a promise about the quality or performance of something.",
+            ['assignment', 'transfer']: "This covers whether and how the agreement can be transferred to someone else."
         }
         
         for keywords, explanation in explanations.items():
@@ -296,8 +339,8 @@ Simple explanation:"""
     
     def explain_clause(self, clause: str) -> str:
         """Main clause explanation method"""
-        if self.granite_model:
-            return self.explain_clause_with_granite(clause)
+        if self.huggingface_api_key:
+            return self.explain_clause_with_huggingface(clause)
         else:
             return self.explain_clause_fallback(clause)
     
@@ -325,12 +368,12 @@ Simple explanation:"""
         summary += f"**Document Length:** {word_count} words\n\n"
         
         # AI Enhancement Status
-        if self.watson_nlu and self.granite_model:
-            summary += "**AI Analysis:** ✅ Premium (Watson NLU + Granite Model)\n\n"
+        if self.watson_nlu and self.huggingface_api_key:
+            summary += "**AI Analysis:** ✅ Premium (Watson NLU + Hugging Face)\n\n"
         elif self.watson_nlu:
             summary += "**AI Analysis:** ✅ Enhanced (Watson NLU)\n\n"
-        elif self.granite_model:
-            summary += "**AI Analysis:** ✅ Advanced (Granite Model)\n\n"
+        elif self.huggingface_api_key:
+            summary += "**AI Analysis:** ✅ Advanced (Hugging Face)\n\n"
         else:
             summary += "**AI Analysis:** ⚙️ Standard (Rule-based)\n\n"
         

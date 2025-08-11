@@ -78,7 +78,7 @@ class PDFGenerator:
         story = []
         
         # Title
-        title = Paragraph("ClauseWise AI Legal Document Analysis", self.styles['CustomTitle'])
+        title = Paragraph("ClauseWise AI Legal Document Analysis Report", self.styles['CustomTitle'])
         story.append(title)
         story.append(Spacer(1, 20))
         
